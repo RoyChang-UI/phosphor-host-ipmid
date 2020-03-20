@@ -883,6 +883,7 @@ std::optional<bool> getPowerStatus()
 {
     bool powerGood = false;
     std::shared_ptr<sdbusplus::asio::connection> busp = getSdBus();
+/*
     try
     {
         constexpr const char* chassisStatePath =
@@ -921,6 +922,27 @@ std::optional<bool> getPowerStatus()
             return std::nullopt;
         }
     }
+*/
+        try
+        {
+            // FIXME: some legacy modules use the older path; try that next
+            constexpr const char* legacyPwrCtrlObj =
+                "/org/openbmc/control/power0";
+            constexpr const char* legacyPwrCtrlIntf =
+                "org.openbmc.control.Power";
+            auto service =
+                ipmi::getService(*busp, legacyPwrCtrlIntf, legacyPwrCtrlObj);
+
+            ipmi::Value variant = ipmi::getDbusProperty(
+                *busp, service, legacyPwrCtrlObj, legacyPwrCtrlIntf, "pgood");
+            powerGood = static_cast<bool>(std::get<int>(variant));
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>("Failed to fetch pgood property",
+                            entry("ERROR=%s", e.what()));
+            return std::nullopt;
+        }
     return std::make_optional(powerGood);
 }
 
@@ -1212,6 +1234,9 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
             break;
 
         case CMD_HARD_RESET:
+            rc = initiate_state_transition(State::Host::Transition::Reboot);
+            break;
+
         case CMD_POWER_CYCLE:
             // SPEC has a section that says certain implementations can trigger
             // PowerOn if power is Off when a command to power cycle is
